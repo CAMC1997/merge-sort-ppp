@@ -8,89 +8,98 @@
 
 using namespace std;
 
-void merge(vector<int> &arr, int p, int q, int r)
+void merge(vector<int> &arr, int left, int mid, int right)
 {
-  // Crear dos vectores temporales
-  vector<int> L(q - p + 1);
-  vector<int> R(r - q);
+  // Create two temporary vectors
+  vector<int> leftVector(mid - left + 1);
+  vector<int> rightVector(right - mid);
 
-  // Copiar los datos en los vectores temporales
-  for (int i = 0; i < L.size(); i++)
+  // Copy data to temporary vectors
+  for (int i = 0; i < leftVector.size(); i++)
   {
-    L[i] = arr[p + i];
+    leftVector[i] = arr[left + i];
   }
-  for (int j = 0; j < R.size(); j++)
+  for (int j = 0; j < rightVector.size(); j++)
   {
-    R[j] = arr[q + 1 + j];
+    rightVector[j] = arr[mid + 1 + j];
   }
 
-  // Fusionar los vectores temporales en el vector original
-  int i = 0, j = 0, k = p;
+  // Merge temporary vectors back into original array
+  int leftIndex = 0, rightIndex = 0, resultIndex = left;
 
-  while (i < L.size() && j < R.size())
+  while (leftIndex < leftVector.size() && rightIndex < rightVector.size())
   {
-    if (L[i] <= R[j])
+    if (leftVector[leftIndex] <= rightVector[rightIndex])
     {
-      arr[k] = L[i];
-      i++;
+      arr[resultIndex] = leftVector[leftIndex];
+      leftIndex++;
     }
     else
     {
-      arr[k] = R[j];
-      j++;
+      arr[resultIndex] = rightVector[rightIndex];
+      rightIndex++;
     }
-    k++;
+    resultIndex++;
   }
 
-  // Copiar los elementos restantes de los vectores temporales
-  while (i < L.size())
+  // Copy remaining elements of left vector
+  while (leftIndex < leftVector.size())
   {
-    arr[k] = L[i];
-    i++;
-    k++;
+    arr[resultIndex] = leftVector[leftIndex];
+    leftIndex++;
+    resultIndex++;
   }
-  while (j < R.size())
+
+  // Copy remaining elements of right vector
+  while (rightIndex < rightVector.size())
   {
-    arr[k] = R[j];
-    j++;
-    k++;
+    arr[resultIndex] = rightVector[rightIndex];
+    rightIndex++;
+    resultIndex++;
   }
 }
 
-void mergeSortSequential(vector<int> &arr, int l, int r)
+void mergeSortSequential(vector<int> &arr, int leftIndex, int rightIndex)
 {
-  if (l < r)
+  // Base case: Subarray with one or zero elements is already sorted
+  if (leftIndex >= rightIndex)
   {
-    int m = l + (r - l) / 2;
-
-    mergeSortSequential(arr, l, m);
-    mergeSortSequential(arr, m + 1, r);
-
-    merge(arr, l, m, r);
+    return;
   }
+
+  // Divide and conquer: Find the middle index and sort subarrays
+  int middleIndex = leftIndex + (rightIndex - leftIndex) / 2;
+  mergeSortSequential(arr, leftIndex, middleIndex);
+  mergeSortSequential(arr, middleIndex + 1, rightIndex);
+
+  // Merge the sorted subarrays
+  merge(arr, leftIndex, middleIndex, rightIndex);
 }
 
-void mergeSortParallel(vector<int> &arr, int l, int r)
+void mergeSortParallel(vector<int> &arr, int leftIndex, int rightIndex)
 {
-  if (l < r)
+  // Base case: Subarray with one or zero elements is already sorted
+  if (leftIndex >= rightIndex)
   {
-    int m = l + (r - l) / 2;
-
-// Ordenar los subconjuntos de forma paralela
-#pragma omp parallel sections
-    {
-#pragma omp section
-      {
-        mergeSortParallel(arr, l, m);
-      }
-#pragma omp section
-      {
-        mergeSortParallel(arr, m + 1, r);
-      }
-    }
-
-    merge(arr, l, m, r);
+    return;
   }
+
+  // Divide the array into two subarrays
+  int middleIndex = leftIndex + (rightIndex - leftIndex) / 2;
+
+  // Use OpenMP task for parallel recursion
+#pragma omp task
+  mergeSortParallel(arr, leftIndex, middleIndex); // Sort first subarray
+
+#pragma omp task
+  mergeSortParallel(arr, middleIndex + 1, rightIndex); // Sort second subarray
+
+  // Synchronize here to ensure that the tasks are completed before merging
+#pragma omp taskwait
+
+  // Merge the sorted subarrays
+#pragma omp critical
+  merge(arr, leftIndex, middleIndex, rightIndex);
 }
 
 void printMenu()
@@ -103,23 +112,29 @@ void printMenu()
   cout << "Opción: ";
 }
 
-void measureTime(vector<int> &arr, int l, int r)
+void measureTimeAndPerformance(vector<int> &arr, int leftIndex, int rightIndex)
 {
   // Medir el tiempo de ordenamiento secuencial
   chrono::time_point<chrono::system_clock> start_seq = chrono::system_clock::now();
-  mergeSortSequential(arr, l, r);
+  mergeSortSequential(arr, leftIndex, rightIndex);
   chrono::time_point<chrono::system_clock> end_seq = chrono::system_clock::now();
   chrono::duration<double> elapsed_seconds_seq = end_seq - start_seq;
 
-  // Medir el tiempo de ordenamiento paralelo
+  // Medir el tiempo de ordenamiento paralelo con OpenMP tasks
   chrono::time_point<chrono::system_clock> start_par = chrono::system_clock::now();
-  mergeSortParallel(arr, l, r);
+#pragma omp parallel
+#pragma omp single
+  {
+    mergeSortParallel(arr, leftIndex, rightIndex);
+  }
   chrono::time_point<chrono::system_clock> end_par = chrono::system_clock::now();
   chrono::duration<double> elapsed_seconds_par = end_par - start_par;
 
   // Imprimir el tiempo de ordenamiento
   cout << "Tiempo de ordenamiento secuencial: " << fixed << setprecision(4) << elapsed_seconds_seq.count() * 1000 << " ms" << endl;
   cout << "Tiempo de ordenamiento paralelo: " << fixed << setprecision(4) << elapsed_seconds_par.count() * 1000 << " ms" << endl;
+  printf("Speedup: %.2f\n", (elapsed_seconds_seq/elapsed_seconds_par));
+  printf("Efficiency %.2f%%\n", 100*(elapsed_seconds_seq/elapsed_seconds_par)/std::thread::hardware_concurrency());
 }
 
 void option1()
@@ -127,7 +142,7 @@ void option1()
   // Arreglo predefinido
   vector<int> arr = {10, 8, 3, 1, 5, 2, 7, 6, 9, 4};
 
-  measureTime(arr, 0, arr.size() - 1); // Pass vector as reference to measureTime function
+  measureTimeAndPerformance(arr, 0, arr.size() - 1); // Pass vector as reference to measureTime function
 }
 
 void option2()
@@ -144,7 +159,7 @@ void option2()
     arr[i] = rand() % 100;
   }
 
-  measureTime(arr, 0, arr.size() - 1);
+  measureTimeAndPerformance(arr, 0, arr.size() - 1);
 }
 
 int main()
